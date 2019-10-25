@@ -1,3 +1,4 @@
+# coding: utf-8
 #inspired by https://github.com/spree-contrib/spree_skrill
 module Spree
   class AlipayStatusController < StoreController
@@ -8,14 +9,19 @@ module Spree
       # alipay acount could vary in each store.
       # get order_no from query string -> get payment -> initialize Alipay -> verify ailpay callback
       order = retrieve_order params["out_trade_no"]
-      alipay_payment = get_alipay_payment( order )
-
-      if alipay_payment.payment_method.provider.verify?( request.query_parameters )
+      #alipay_payment = get_alipay_payment( order )
+      
+      #if alipay_payment.payment_method.provider.verify?( request.query_parameters )
+      if $alipayclient.verify?(request.query_parameters) 
         # 担保交易的交易状态变更顺序依次是:
         #  WAIT_BUYER_PAY→WAIT_SELLER_SEND_GOODS→WAIT_BUYER_CONFIRM_GOODS→TRADE_FINISHED。
         # 即时到账的交易状态变更顺序依次是:
         #  WAIT_BUYER_PAY→TRADE_FINISHED。
-        complete_order( order, request.request_parameters )
+        alipay_para={'trade_no'=> request.query_parameters['trade_no'],
+                     'trade_status' => 'completed'
+                    }
+
+        complete_order( order, alipay_para )
         if order.complete?
           #copy from spree/frontend/checkout_controller
           session[:order_id] = nil
@@ -34,8 +40,8 @@ module Spree
 
     def alipay_notify
       order = retrieve_order params["out_trade_no"]
-      alipay_payment = get_alipay_payment( order )
-      if alipay_payment.payment_method.provider.verify?( request.request_parameters )
+      #alipay_payment = get_alipay_payment( order )
+      if $alipayclient.verify?(request.query_parameters)    #alipay_payment.payment_method.provider.verify?( request.request_parameters )
         complete_order( order, request.request_parameters )
         render text: "success"
       else
@@ -58,8 +64,10 @@ module Spree
     def complete_order( order, alipay_parameters )
       unless order.complete?
         alipay_payment = get_alipay_payment( order )
+        alipay_payment.update_attribute :state, "completed"
         alipay_payment.update_attribute :response_code, "#{alipay_parameters['trade_no']},#{alipay_parameters['trade_status']}"
         # it require pending_payments to process_payments!
+        order.payments.valid.where(source_type: 'Spree::StoreCredit').each{ |pay| pay.update_attribute :state, "completed" }
         order.next
       end
     end

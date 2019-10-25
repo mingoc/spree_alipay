@@ -1,3 +1,4 @@
+# coding: utf-8
 require 'alipay'
 
 module Spree
@@ -18,8 +19,8 @@ module Spree
     # * params
     #   * options - notify_url, return_url, body, subject
     def url( order, options = {} )
-      pc_direct_params = {
-        total_fee:  order.total
+      pc_wap_params = {
+        total_fee:  order.total - order.payments.valid.where(source_type: 'Spree::StoreCredit').sum(:amount) 
       }
       pc_escrow_params = {
         :price => order.item_total,
@@ -27,18 +28,43 @@ module Spree
         :logistics_type=> 'EXPRESS',
         :logistics_fee => order.shipments.to_a.sum(&:cost),
         :logistics_payment=>'BUYER_PAY' }
-      wap_params =  {
-        total_fee:  order.total
-        }
 
       case service
       when Gateway::AlipayBase::ServiceEnum.alipay_wap
-        options.merge!( wap_params )
-        ::Alipay::Service.create_direct_pay_by_user_wap_url( options )
+        options.merge!( pc_wap_params )
+        #::Alipay::Service.create_direct_pay_by_user_wap_url( options )
+#        binding.pry
+        $alipayclient.page_execute_url(
+          method: 'alipay.trade.wap.pay',
+          return_url: options[:return_url],
+          notify_url: options[:notify_url],
+          biz_content: JSON.generate({
+                                       out_trade_no: options[:out_trade_no], 
+                                       product_code: 'QUICK_WAP_WAY',
+                                       total_amount: options[:total_fee],
+                                       subject: options[:subject],
+                                       quit_url: options[:return_url], #todo change
+                                     }, ascii_only: true)
+        )
+
+        
       when Gateway::AlipayBase::ServiceEnum.create_direct_pay_by_user
-        options.merge!( pc_direct_params )
+        options.merge!( pc_wap_params )
+        
         #create_direct_pay_by_user
-        ::Alipay::Service.create_direct_pay_by_user_url( options )
+        $alipayclient.page_execute_url(
+          method: 'alipay.trade.page.pay',
+          biz_content: {
+            out_trade_no: options[:out_trade_no],
+            product_code: 'FAST_INSTANT_TRADE_PAY',
+            total_amount: options[:total_fee],
+            subject: options[:subject]
+          }.to_json(ascii_only: true),
+          return_url: options[:return_url],
+          notify_url: options[:notify_url],
+        )
+        
+        #::Alipay::Service.create_direct_pay_by_user_url( options )
       when Gateway::AlipayBase::ServiceEnum.create_partner_trade_by_buyer
         # escrow service
         options.merge!( pc_escrow_params )

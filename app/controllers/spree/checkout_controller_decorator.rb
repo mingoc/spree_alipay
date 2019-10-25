@@ -22,6 +22,7 @@ module Spree
       product_names = order.products.pluck(:name)
 
       #service partner _input_charset out_trade_no subject payment_type logistics_type logistics_fee logistics_payment seller_email price quantity
+      
       options = { #:_input_charset => "utf-8",
                   :out_trade_no => order.number,
                   #:price => order.item_total,
@@ -35,7 +36,7 @@ module Spree
                   :body => product_names.join(',').truncate(500),  #char 1000
                   #:payment_type => 1,
                   :subject => product_names.join(',').truncate(128) #char 256
-         }
+      }
       alipay.provider.url( order, options )
     end
 
